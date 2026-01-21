@@ -197,9 +197,406 @@ The solution is an **event-driven n8n workflow** integrating OCR and LLM service
 
 ---
 
-## 13. Future Enhancements
+## ✨ Key Capabilities
 
-* CAD file parsing integration
-* Rule-based validation against ISO/ASME standards
+* **OCR hygiene**: Deterministic preprocessing to reduce noise (no guessing).
+* **Schema-bound LLM extraction**: Strict JSON output with source grounding.
+* **Deterministic confidence scoring**: Explainable heuristics (not LLM vibes).
+* **Grounding & traceability**: Every field links back to OCR text.
+* **Post-processing safety**: Deduplication, normalization, and hard validation.
+* **Orchestration-ready**: n8n workflow for production-style execution.
+
+---
+
+## 🧱 Architecture (Conceptual)
+
+```
+Image/PDF
+  ↓
+OCR Engine (Tesseract / Vision API)
+  ↓
+OCR Preprocess (deterministic)
+  ↓
+LLM Extraction (schema-bound)
+  ↓
+Confidence Scoring (heuristic)
+  ↓
+Grounding (OCR traceability)
+  ↓
+Post-Processing (dedup, normalize)
+  ↓
+Schema Validation (hard gate)
+  ↓
+Final JSON
+```
+
+Design principles:
+
+* Separation of concerns
+* Fail-safe defaults
+* Explainability > raw speed
+
+---
+
+## 📁 Repository Structure
+
+```
+blueprint-ocr-structured-spec/
+├── docs/                     # BRD, architecture notes
+├── schemas/                  # Output contract (JSON Schema)
+├── prompts/                  # LLM prompts (system + extraction)
+├── ocr/                      # OCR preprocessing
+├── llm/                      # Extraction, confidence, grounding, postprocess
+├── workflows/n8n/            # n8n workflow export (JSON)
+├── tests/                    # Minimal but meaningful tests
+└── scripts/                  # Local runners & evaluation helpers
+```
+
+---
+
+## 🚀 Quick Start (Local, No n8n)
+
+> Use this path to understand the logic end-to-end without orchestration.
+
+### 1) Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2) Prepare sample OCR text
+
+Place a text file in:
+
+```
+data/ocr_output/sample.txt
+```
+
+### 3) Run local pipeline
+
+```bash
+python scripts/run_local_pipeline.py data/ocr_output/sample.txt
+```
+
+Output will be written to:
+
+```
+data/structured_output/
+```
+
+---
+
+## 🔁 Run with n8n (Recommended)
+
+### Import workflow
+
+1. Open n8n UI
+2. Import workflow:
+
+```
+workflows/n8n/blueprint_ocr_main.json
+```
+
+### Trigger
+
+* `POST /webhook/blueprint-upload`
+* Form-data:
+
+  * `file`: PDF/PNG/JPG
+  * `file_name`: string
+
+### Response
+
+* Validated JSON conforming to `schemas/output_schema_v1.json`
+
+---
+
+## 🧪 Testing
+
+Run all tests:
+
+```bash
+pytest tests/
+```
+
+What we test (intentionally minimal):
+
+* OCR noise handling (numeric & symbol stability)
+* Schema validity (contract enforcement)
+* Confidence degradation when grounding fails
+
+---
+
+## 📊 Confidence Score Semantics
+
+* **0.85–1.00**: High confidence → safe for automation
+* **0.60–0.84**: Medium → human review recommended
+* **< 0.60**: Low → do not auto-consume
+
+> Confidence is a **heuristic ranking**, not a probability.
+
+---
+
+## ⚠️ Known Limitations
+
+* Not a CAD parser (DWG/STEP out of scope)
+* Handwritten drawings reduce OCR quality
+* No standards validation (ISO/ASME) in current scope
+
+---
+
+## 1. High-Level Architecture Diagram
+
+```
+┌──────────────┐
+│   Blueprint  │
+│  PDF / Image │
+└──────┬───────┘
+       │ Upload (Webhook)
+       ▼
+┌──────────────┐
+│     n8n      │  ← Orchestration Layer
+│  (Workflow)  │
+└──────┬───────┘
+       │
+       ▼
+┌───────────────────────────┐
+│        OCR Engine         │
+│  (Tesseract / Vision API) │
+└──────────┬────────────────┘
+           │ raw OCR text
+           ▼
+┌───────────────────────────┐
+│     OCR Preprocessing     │
+│  (Deterministic Cleaning) │
+└──────────┬────────────────┘
+           │ clean OCR text
+           ▼
+┌───────────────────────────┐
+│     LLM Extraction        │
+│ (Schema-bound, grounded) │
+└──────────┬────────────────┘
+           │ structured JSON
+           ▼
+┌───────────────────────────┐
+│   Confidence Scoring      │
+│ (Heuristic, deterministic)│
+└──────────┬────────────────┘
+           │ scored JSON
+           ▼
+┌───────────────────────────┐
+│       Grounding Engine    │
+│ (OCR traceability)        │
+└──────────┬────────────────┘
+           │ grounded JSON
+           ▼
+┌───────────────────────────┐
+│      Post-Processing      │
+│ (Dedup & normalization)   │
+└──────────┬────────────────┘
+           │ final candidate
+           ▼
+┌───────────────────────────┐
+│     Schema Validation     │
+│   (Hard contract gate)    │
+└──────────┬────────────────┘
+           │ valid JSON
+           ▼
+┌───────────────────────────┐
+│ Response / Persistence    │
+│ (Webhook / DB / File)     │
+└───────────────────────────┘
+```
+
+---
+
+## 2. Architectural Layers & Responsibilities
+
+### 2.1 Orchestration Layer (n8n)
+
+**Responsibility:**
+
+* Event handling (upload, trigger)
+* Branching & fallback logic
+* Retry & error routing
+
+**Key principle:**
+
+> n8n coordinates *when* things happen, not *how* they are interpreted.
+
+---
+
+### 2.2 OCR Layer
+
+**Components:**
+
+* Tesseract (primary)
+* Vision API (fallback)
+
+**Responsibilities:**
+
+* Convert image/PDF to raw text
+* Preserve maximum textual signal
+
+**Explicitly NOT responsible for:**
+
+* Semantic interpretation
+* Unit inference
+
+---
+
+### 2.3 OCR Preprocessing Layer
+
+**Purpose:** Reduce OCR noise without altering meaning.
+
+Examples:
+
+* Normalize symbols (Ø → DIAMETER)
+* Fix numeric confusions (O → 0)
+* Remove non-informative lines
+
+**Design choice:** Deterministic, rule-based, testable.
+
+---
+
+### 2.4 LLM Extraction Layer
+
+**Purpose:** Semantic interpretation of blueprint text.
+
+**Key constraints:**
+
+* Strict JSON schema enforcement
+* Mandatory `source_text` grounding
+* No assumptions or hallucinations
+
+**Why LLM here:**
+Blueprints vary widely; rules alone do not scale.
+
+---
+
+### 2.5 Confidence Scoring Layer
+
+**Purpose:** Decide *how safe* the extracted data is for automation.
+
+**Inputs:**
+
+* OCR clarity
+* Unit explicitness
+* Redundancy
+* Tolerance notation
+
+**Important:**
+
+> Confidence is a heuristic ranking, not a probability.
+
+---
+
+### 2.6 Grounding Layer
+
+**Purpose:** Traceability and explainability.
+
+Each extracted field is linked to:
+
+* OCR line
+* Line index
+* Similarity score
+
+**Effect:**
+
+* Enables auditing
+* Penalizes ungrounded extraction
+
+---
+
+### 2.7 Post-Processing Layer
+
+**Purpose:** Final safety enforcement.
+
+Responsibilities:
+
+* Deduplicate equivalent dimensions
+* Normalize units
+* Cap confidence scores
+
+**Design rule:**
+
+> No new information is introduced at this stage.
+
+---
+
+### 2.8 Validation & Output Layer
+
+**Purpose:** Contract enforcement.
+
+* JSON Schema validation
+* Hard failure on invalid output
+
+**Guarantee:**
+Downstream systems only receive schema-valid data.
+
+---
+
+## 3. Key Design Decisions & Trade-offs
+
+### Decision: LLM after OCR preprocessing
+
+* ✅ Reduces hallucination
+* ❌ Slightly more latency
+
+### Decision: Deterministic confidence scoring
+
+* ✅ Explainable & auditable
+* ❌ Less flexible than ML-based scoring
+
+### Decision: Hard schema validation
+
+* ✅ Strong downstream guarantees
+* ❌ Partial outputs may be rejected
+
+---
+
+## 4. Failure Modes & Safeguards
+
+| Failure           | Mitigation                     |
+| ----------------- | ------------------------------ |
+| OCR noise         | Preprocessing + fallback OCR   |
+| LLM hallucination | Grounding + schema enforcement |
+| Ambiguous specs   | Confidence penalty + flagging  |
+| Pipeline error    | n8n retries & branching        |
+
+---
+
+## 5. Why This Architecture Works
+
+This system prioritizes:
+
+* Explainability over black-box automation
+* Contract-first design over ad-hoc parsing
+* Incremental extensibility (HITL, CAD, standards)
+
+It is suitable for:
+
+* Internal manufacturing tools
+* Data ingestion pipelines
+* Engineering analytics foundations
+
+---
+
+## 6. Extension Points
+
 * Human-in-the-loop review UI
-* Integration with MES / ERP systems
+* CAD-native parsers
+* Standards validation (ISO / ASME)
+* Batch & queue-based processing
+
+---
+
+## 7. Summary
+
+This architecture demonstrates a **production-minded approach** to combining OCR and LLMs:
+
+* LLMs are powerful but constrained
+* Deterministic layers provide safety
+* Orchestration enables scalability
+
+Together, they form a robust and defensible system for blueprint digitization.
