@@ -327,6 +327,37 @@ What we test (intentionally minimal):
 
 ---
 
+## Design Decisions & Trade-offs
+
+### Why deterministic confidence scoring (not ML)
+Confidence scores are computed using **rule-based heuristics** instead of a learned model.  
+This makes the system:
+- Explainable to engineers and QA
+- Stable across OCR / LLM changes
+- Safe for downstream automation decisions
+
+ML-based confidence estimation can be added later once labeled data exists.
+
+---
+
+### Why grounding before post-processing
+Grounding is applied **before** deduplication and normalization so that:
+- Confidence penalties reflect original OCR evidence
+- Post-processing does not hide weak or ambiguous extractions
+
+This preserves traceability and auditability.
+
+---
+
+### Why n8n for orchestration
+n8n is used as an orchestration layer to:
+- Separate execution flow from business logic
+- Enable retries, fallbacks, and human-in-the-loop extensions
+- Provide a visual workflow for non-technical stakeholders
+
+Core logic remains framework-agnostic and fully testable in pure Python.
+
+
 ## 📊 Confidence Score Semantics
 
 * **0.85–1.00**: High confidence → safe for automation

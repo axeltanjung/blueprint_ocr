@@ -19,3 +19,8 @@ OCR Text:
 {{OCR_TEXT}}
 
 Return output strictly as JSON following the provided schema.
+
+IMPORTANT:
+- Output MUST be raw JSON only
+- Do NOT use markdown or code fences
+- Do NOT add explanations
