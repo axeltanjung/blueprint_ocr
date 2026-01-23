@@ -11,6 +11,16 @@ from llm.postprocessor import PostProcessor
 from schemas.schema_validator import validate_against_schema, SchemaValidationError
 from datetime import datetime, timezone
 datetime.now(timezone.utc).isoformat()
+from llm.confidence_policy import ConfidencePolicy
+
+def aggregate_document_decision(dimensions):
+    if any(d["decision"] == "REJECT" for d in dimensions):
+        return "REJECTED"
+
+    if any(d["decision"] == "REVIEW_REQUIRED" for d in dimensions):
+        return "REVIEW_REQUIRED"
+
+    return "AUTO_ACCEPTED"
 
 def load_prompt(path: str) -> str:
     return Path(path).read_text()
@@ -75,6 +85,20 @@ def main(ocr_text_path: str):
         clean_text
     )
     extracted["specifications"]["dimensions"] = grounded_dims
+
+    # 7. Grounding  
+    grounded_dims = GroundingEngine().ground_dimensions(
+        extracted["specifications"]["dimensions"],
+        clean_text
+    )
+    extracted["specifications"]["dimensions"] = grounded_dims
+
+    # 8. Confidence decision policy
+    policy = ConfidencePolicy()
+    decided_dims = policy.apply(
+        extracted["specifications"]["dimensions"]
+    )
+    extracted["specifications"]["dimensions"] = decided_dims
 
     # 8. Post-processing
     final = PostProcessor().process(extracted)
