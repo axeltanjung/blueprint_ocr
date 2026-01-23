@@ -8,11 +8,15 @@ from llm.llm_adapter import adapt_openrouter_output
 from llm.confidence_scoring import ConfidenceScorer
 from llm.grounding import GroundingEngine
 from llm.postprocessor import PostProcessor
-
+from schemas.schema_validator import validate_against_schema, SchemaValidationError
+from datetime import datetime, timezone
+datetime.now(timezone.utc).isoformat()
 
 def load_prompt(path: str) -> str:
     return Path(path).read_text()
 
+def load_schema(path: str):
+    return json.loads(Path(path).read_text())
 
 def main(ocr_text_path: str):
     # 1. Load OCR text
@@ -38,6 +42,27 @@ def main(ocr_text_path: str):
 
     # 5. Adapt to internal schema
     extracted = adapt_openrouter_output(raw_llm_output)
+
+    # 5.1 Enrich metadata (PIPELINE responsibility)
+    extracted["metadata"]["file_name"] = Path(ocr_text_path).name
+    extracted["metadata"]["processed_at"] = datetime.utcnow().isoformat()
+
+    # 6. HARD SCHEMA VALIDATION
+    schema = load_schema("schemas/output_schema_v1.json")
+
+    try:
+        validate_against_schema(extracted, schema)
+    except SchemaValidationError as e:
+        raise RuntimeError(
+            f"Pipeline stopped due to schema violation.\n{str(e)}\n"
+            f"Raw LLM output:\n{json.dumps(raw_llm_output, indent=2)}"
+        )
+
+    if not extracted["specifications"]["dimensions"]:
+        raise RuntimeError(
+            "No valid dimensions extracted after schema validation."
+        )
+
 
     # 6. Confidence scoring
     scorer = ConfidenceScorer()
